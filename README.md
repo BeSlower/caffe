@@ -1,5 +1,14 @@
-# Caffe
+# Modified Caffe
 
+## Announcement
+This is my personal version caffe for research and study. I will add some custom layers and change some source code.
+
+## Updates
+#### 2016.7.20
+- add **Tripletloss layer**
+- add **Normalization layer**
+
+## Caffe
 [![Build Status](https://travis-ci.org/BVLC/caffe.svg?branch=master)](https://travis-ci.org/BVLC/caffe)
 [![License](https://img.shields.io/badge/license-BSD-blue.svg)](LICENSE)
 
@@ -22,7 +31,7 @@ Framework development discussions and thorough bug reports are collected on [Iss
 
 Happy brewing!
 
-## License and Citation
+### License and Citation
 
 Caffe is released under the [BSD 2-Clause license](https://github.com/BVLC/caffe/blob/master/LICENSE).
 The BVLC reference models are released for unrestricted use.
