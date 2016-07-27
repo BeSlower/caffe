@@ -1,6 +1,5 @@
 # Modified Caffe
 
-## Announcement
 This is my personal version caffe for research and study. I will add some custom layers and change some source code.
 
 ## Updates
