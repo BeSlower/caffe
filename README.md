@@ -6,6 +6,7 @@ This is my personal version caffe for research and study. I will add some custom
 #### 2016.7.20
 - add **Tripletloss layer**
 - add **Normalization layer**
+
 #### 2016.8.4
 - add **Lbn layer**
 - add **Coupled clusters loss layer**
