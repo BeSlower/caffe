@@ -3,8 +3,96 @@
 
 #include "caffe/layers/contrastive_loss_layer.hpp"
 #include "caffe/util/math_functions.hpp"
+#include <cmath>
 
 namespace caffe {
+    
+    template <typename T>
+    static bool ComputeMargin(const T *dist,
+                              const T *labels_a,
+                              const T *labels_b,
+                              const int n,
+                                T &margin)
+    {
+        int num_pos = 0;
+        T m_margin;
+
+        vector<pair<T, bool> > dist_vector;
+        vector<bool> similarity_labels(n,0);
+
+            for (int i = 0; i < n; ++i)
+            {
+                if (labels_a[i] == labels_b[i])
+                {
+                    similarity_labels[i] = 1;
+                }
+                else
+                {
+                    similarity_labels[i] = 0;
+                }
+                dist_vector.push_back(make_pair(dist[i], similarity_labels[i]));
+            }
+        sort(dist_vector.begin(), dist_vector.end(), std::less<pair<T, bool> >());
+
+        for (int i = 0; i < n; ++i)
+        {
+            num_pos += static_cast<int>(similarity_labels[i]);
+        }
+
+        if (num_pos == 0 || num_pos == n)
+        {
+            m_margin = dist_vector.back().first;
+        }
+        else
+        {
+            int count_pos = 0;
+            int count_neg = 0;
+            int min_err = num_pos;
+
+            m_margin = T(0);
+
+            for (int i = 0; i < n; ++i)
+            {
+                if (dist_vector[i].second)
+                {
+                    count_pos++;
+                }
+                else
+                {
+                    count_neg++;
+                }
+
+                //choose a threshhold, which makes less false positives
+                int err = num_pos - count_pos + count_neg;
+                if (err < min_err)
+                {
+                    min_err = err;
+                    m_margin = dist_vector[i].first;
+                }
+            }
+        }
+
+        margin = m_margin;
+        return true;
+    }
+	template <typename T>
+	static bool L2_norm(T	*array,
+		const int n)
+	{
+		T sum = T(0);
+		for (int i = 0; i < n; i++)
+		{
+			sum += array[i] * array[i];
+		}
+		sum = 1.f / std::max(1e-6f, sqrtf(sum));
+
+		for (int i = 0; i < n; i++)
+		{
+			array[i] = array[i] * sum;
+		}
+		return true;
+	}
+
 
 template <typename Dtype>
 void ContrastiveLossLayer<Dtype>::LayerSetUp(
@@ -18,6 +106,9 @@ void ContrastiveLossLayer<Dtype>::LayerSetUp(
   CHECK_EQ(bottom[2]->channels(), 1);
   CHECK_EQ(bottom[2]->height(), 1);
   CHECK_EQ(bottom[2]->width(), 1);
+  CHECK_EQ(bottom[3]->channels(), 1);
+  CHECK_EQ(bottom[3]->height(), 1);
+  CHECK_EQ(bottom[3]->width(), 1);
   diff_.Reshape(bottom[0]->num(), bottom[0]->channels(), 1, 1);
   diff_sq_.Reshape(bottom[0]->num(), bottom[0]->channels(), 1, 1);
   dist_sq_.Reshape(bottom[0]->num(), 1, 1, 1);
@@ -32,20 +123,37 @@ void ContrastiveLossLayer<Dtype>::Forward_cpu(
     const vector<Blob<Dtype>*>& bottom,
     const vector<Blob<Dtype>*>& top) {
   int count = bottom[0]->count();
+  const int channels = bottom[0]->channels();
   caffe_sub(
       count,
       bottom[0]->cpu_data(),  // a
       bottom[1]->cpu_data(),  // b
       diff_.mutable_cpu_data());  // a_i-b_i
-  const int channels = bottom[0]->channels();
+  
   Dtype margin = this->layer_param_.contrastive_loss_param().margin();
   bool legacy_version =
       this->layer_param_.contrastive_loss_param().legacy_version();
   Dtype loss(0.0);
+  
+  //ComputeMargin
   for (int i = 0; i < bottom[0]->num(); ++i) {
-    dist_sq_.mutable_cpu_data()[i] = caffe_cpu_dot(channels,
-        diff_.cpu_data() + (i*channels), diff_.cpu_data() + (i*channels));
-    if (static_cast<int>(bottom[2]->cpu_data()[i])) {  // similar pairs
+      dist_sq_.mutable_cpu_data()[i] = caffe_cpu_dot(channels,
+          diff_.cpu_data() + (i*channels), diff_.cpu_data() + (i*channels));
+  }
+  ComputeMargin(dist_sq_.cpu_data(), bottom[2]->cpu_data(), bottom[3]->cpu_data(), bottom[0]->num(), margin);
+  margin = sqrt(margin);
+  global_margin_ = margin;
+  //
+  for (int i = 0; i < bottom[0]->num(); ++i) {
+//     dist_sq_.mutable_cpu_data()[i] = caffe_cpu_dot(channels,
+//         diff_.cpu_data() + (i*channels), diff_.cpu_data() + (i*channels));
+    //add
+    //int label1 = static_cast<int>(bottom[2]->cpu_data()[i]);
+    //int label2 = static_cast<int>(bottom[3]->cpu_data()[i]);
+    //printf("label1 = %d, label2 = %d\n", label1, label2);
+    //printf("dist_sq = %.5f\n", dist_sq_.cpu_data()[i]);
+    //add
+    if (static_cast<int>(bottom[2]->cpu_data()[i]) == static_cast<int>(bottom[3]->cpu_data()[i])) {  // similar pairs
       loss += dist_sq_.cpu_data()[i];
     } else {  // dissimilar pairs
       if (legacy_version) {
@@ -65,9 +173,10 @@ template <typename Dtype>
 void ContrastiveLossLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& top,
     const vector<bool>& propagate_down, const vector<Blob<Dtype>*>& bottom) {
   Dtype margin = this->layer_param_.contrastive_loss_param().margin();
+  margin = global_margin_;
   bool legacy_version =
       this->layer_param_.contrastive_loss_param().legacy_version();
-  for (int i = 0; i < 2; ++i) {
+  for (int i = 0; i < 4; ++i) {
     if (propagate_down[i]) {
       const Dtype sign = (i == 0) ? 1 : -1;
       const Dtype alpha = sign * top[0]->cpu_diff()[0] /
@@ -76,7 +185,7 @@ void ContrastiveLossLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& top,
       int channels = bottom[i]->channels();
       for (int j = 0; j < num; ++j) {
         Dtype* bout = bottom[i]->mutable_cpu_diff();
-        if (static_cast<int>(bottom[2]->cpu_data()[j])) {  // similar pairs
+        if (static_cast<int>(bottom[2]->cpu_data()[j]) == static_cast<int>(bottom[3]->cpu_data()[j])) {  // similar pairs
           caffe_cpu_axpby(
               channels,
               alpha,

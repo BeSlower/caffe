@@ -43,14 +43,19 @@ class ContrastiveLossLayer : public LossLayer<Dtype> {
   virtual void LayerSetUp(const vector<Blob<Dtype>*>& bottom,
       const vector<Blob<Dtype>*>& top);
 
-  virtual inline int ExactNumBottomBlobs() const { return 3; }
+  virtual inline int ExactNumBottomBlobs() const { return 4; }
   virtual inline const char* type() const { return "ContrastiveLoss"; }
   /**
    * Unlike most loss layers, in the ContrastiveLossLayer we can backpropagate
    * to the first two inputs.
    */
   virtual inline bool AllowForceBackward(const int bottom_index) const {
-    return bottom_index != 2;
+      if ((bottom_index == 2)
+          || (bottom_index == 3))
+      {
+          return false;
+      }
+    return true;
   }
 
  protected:
@@ -94,6 +99,7 @@ class ContrastiveLossLayer : public LossLayer<Dtype> {
   Blob<Dtype> dist_sq_;  // cached for backward pass
   Blob<Dtype> diff_sq_;  // tmp storage for gpu forward pass
   Blob<Dtype> summer_vec_;  // tmp storage for gpu forward pass
+  Dtype  global_margin_;
 };
 
 }  // namespace caffe
