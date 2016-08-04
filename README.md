@@ -13,7 +13,7 @@ This is my personal version caffe for research and study. I will add some custom
 - add **Lifted structured loss layer**
 
 #### 2016.8.4
-- add new branch **Siameses**
+- add new branch **Siamese**
 
 ## Caffe
 [![Build Status](https://travis-ci.org/BVLC/caffe.svg?branch=master)](https://travis-ci.org/BVLC/caffe)
