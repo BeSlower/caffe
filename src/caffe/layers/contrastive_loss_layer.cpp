@@ -3,7 +3,6 @@
 
 #include "caffe/layers/contrastive_loss_layer.hpp"
 #include "caffe/util/math_functions.hpp"
-#include <cmath>
 
 namespace caffe {
     
@@ -62,7 +61,7 @@ namespace caffe {
                     count_neg++;
                 }
 
-                //choose a threshhold, which makes less false positives
+                //选择一个阈值，使错分的样本数最少
                 int err = num_pos - count_pos + count_neg;
                 if (err < min_err)
                 {

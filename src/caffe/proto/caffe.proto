@@ -306,7 +306,7 @@ message ParamSpec {
 // NOTE
 // Update the next available ID when you add a new LayerParameter field.
 //
-// LayerParameter next available layer-specific ID: 153 (last added: lifted structurd)
+// LayerParameter next available layer-specific ID: 147 (last added: recurrent_param)
 message LayerParameter {
   optional string name = 1; // the layer name
   optional string type = 2; // the layer type
@@ -403,14 +403,12 @@ message LayerParameter {
   optional ThresholdParameter threshold_param = 128;
   optional TileParameter tile_param = 138;
   optional WindowDataParameter window_data_param = 129;
-  optional TripletLossParameter triplet_loss_param = 147;
-  optional NormalizationParameter normalization_param = 148;
-  optional LBNParameter lbn_param = 149;
-  optional SiameseDataParameter siamese_data_param = 150;
-  optional CoupledClusterLossParameter coupled_cluster_loss_param = 151;
-  optional LiftedStructSimilaritySoftmaxLossParameter lifted_struct_sim_softmax_loss_param = 152;
+  optional SiameseDataParameter siamese_data_param = 153;
+ optional LBNParameter lbn_param = 148;
 }
 
+// Message that stores parameters used to apply transformation
+// to the data layer's data
 message TransformationParameter {
   // For data pre-processing, we can do simple scaling and subtracting the
   // data mean, if provided. Note that the mean subtraction is always carried
@@ -429,16 +427,7 @@ message TransformationParameter {
   // Force the decoded image to have 3 color channels.
   optional bool force_color = 6 [default = false];
   // Force the decoded image to have 1 color channels.
-  optional bool force_gray = 7 [default = false]; 
-  // only valid for image data layer
-  // usage: if set 3, randomly using none/3x3/5x5/7x7 gaussian smoothing
-  optional uint32 rand_smooth_scale = 8 [default = 0];
-  optional uint32 color_cast = 9 [default = 0];
-  optional float aspect_ratio = 10 [default = 1]; 
-  optional uint32 rotation = 11 [default = 0];
-  optional float scale_jittering = 12 [default = 1];
-  optional uint32 crop_size_height = 13 [default = 0];
-  optional uint32 crop_size_width = 14 [default = 0];
+  optional bool force_gray = 7 [default = false];
 }
 
 // Message that stores parameters shared by loss layers
@@ -486,6 +475,15 @@ message AccuracyParameter {
 
   // If specified, ignore instances with the given label.
   optional int32 ignore_label = 3;
+}
+
+// Message that stores parameters used by LBNLayer
+message LBNParameter {
+  optional FillerParameter scale_filler = 1; // The filler for the scale
+  optional FillerParameter shift_filler = 2; // The filler for the shift
+  optional float eps = 3 [default = 1e-5]; // The epsilon added to variance  
+  optional float momentum = 4 [default = 0.9]; // The momentum factor for moving average
+  optional bool moving_average = 5 [default = true]; // whether or not using moving average for inference
 }
 
 message ArgMaxParameter {
@@ -809,8 +807,45 @@ message ImageDataParameter {
   // data.
   optional bool mirror = 6 [default = false];
   optional string root_folder = 12 [default = ""];
+  // -1: random from [0, 3]; 0: nearest; 1: bilinear; 2: bicubic; 3: area; 4: lanczos8
+  optional int32 interpolation = 13 [default = 1];
+  // 0: normal warp, 1: short_side, 2: random short_side
+  optional int32 resize_mode = 14 [default = 0];
 }
-
+message SiameseDataParameter {
+  // Specify the data source.
+  optional string source = 1;
+  // Specify the batch size.
+  optional uint32 batch_size = 4 [default = 1];
+  // The rand_skip variable is for the data layer to skip a few data points
+  // to avoid all asynchronous sgd clients to start at the same point. The skip
+  // point would be set as rand_skip * rand(0,1). Note that rand_skip should not
+  // be larger than the number of keys in the database.
+  optional uint32 rand_skip = 7 [default = 0];
+  // Whether or not ImageLayer should shuffle the list of files at every epoch.
+  optional bool shuffle = 8 [default = false];
+  // It will also resize images if new_height or new_width are not zero.
+  optional uint32 new_height = 9 [default = 0];
+  optional uint32 new_width = 10 [default = 0];
+  // Specify if the images are color or gray
+  optional bool is_color = 11 [default = true];
+  // DEPRECATED. See TransformationParameter. For data pre-processing, we can do
+  // simple scaling and subtracting the data mean, if provided. Note that the
+  // mean subtraction is always carried out before scaling.
+  optional float scale = 2 [default = 1];
+  optional string mean_file = 3;
+  // DEPRECATED. See TransformationParameter. Specify if we would like to randomly
+  // crop an image.
+  optional uint32 crop_size = 5 [default = 0];
+  // DEPRECATED. See TransformationParameter. Specify if we want to randomly mirror
+  // data.
+  optional bool mirror = 6 [default = false];
+  optional string root_folder = 12 [default = ""];
+  // -1: random from [0, 3]; 0: nearest; 1: bilinear; 2: bicubic; 3: area; 4: lanczos8
+  optional int32 interpolation = 13 [default = 1];
+  // 0: normal warp, 1: short_side, 2: random short_side
+  optional int32 resize_mode = 14 [default = 0];
+}
 message InfogainLossParameter {
   // Specify the infogain matrix source.
   optional string source = 1;
@@ -1277,8 +1312,8 @@ message V1LayerParameter {
   optional AccuracyParameter accuracy_param = 27;
   optional ArgMaxParameter argmax_param = 23;
   optional ConcatParameter concat_param = 9;
-  optional ContrastiveLossParameter contrastive_loss_param = 40;
   optional ConvolutionParameter convolution_param = 10;
+  optional ContrastiveLossParameter contrastive_loss_param = 55;
   optional DataParameter data_param = 11;
   optional DropoutParameter dropout_param = 12;
   optional DummyDataParameter dummy_data_param = 26;
@@ -1409,72 +1444,4 @@ message PReLUParameter {
   optional FillerParameter filler = 1;
   // Whether or not slope paramters are shared across channels.
   optional bool channel_shared = 2 [default = false];
-}
-
-message TripletLossParameter {
-  //margin for negative triplet
-  optional float margin = 1 [default = 1.0];
-  optional uint32 losstype = 2 [default = 1];
-  optional uint32 num_negatives = 3 [default = 3];
-  optional uint32 use_pair = 4 [default = 0];
-}
-message NormalizationParameter {
-  enum Norm{
-    L1 = 1;
-    L2 = 2;
-  }
-  optional Norm norm = 1 [default = L2];
-}
-// Message that stores parameters used by LBNLayer
-message LBNParameter {
-  optional FillerParameter scale_filler = 1; // The filler for the scale
-  optional FillerParameter shift_filler = 2; // The filler for the shift
-  optional float eps = 3 [default = 1e-5]; // The epsilon added to variance  
-  optional float momentum = 4 [default = 0.9]; // The momentum factor for moving average
-  optional bool moving_average = 5 [default = true]; // whether or not using moving average for inference
-}
-message SiameseDataParameter {
-  // Specify the data source.
-  optional string source = 1;
-  // Specify the batch size.
-  optional uint32 batch_size = 4 [default = 1];
-  // The rand_skip variable is for the data layer to skip a few data points
-  // to avoid all asynchronous sgd clients to start at the same point. The skip
-  // point would be set as rand_skip * rand(0,1). Note that rand_skip should not
-  // be larger than the number of keys in the database.
-  optional uint32 rand_skip = 7 [default = 0];
-  // Whether or not ImageLayer should shuffle the list of files at every epoch.
-  optional bool shuffle = 8 [default = false];
-  // It will also resize images if new_height or new_width are not zero.
-  optional uint32 new_height = 9 [default = 0];
-  optional uint32 new_width = 10 [default = 0];
-  // Specify if the images are color or gray
-  optional bool is_color = 11 [default = true];
-  // DEPRECATED. See TransformationParameter. For data pre-processing, we can do
-  // simple scaling and subtracting the data mean, if provided. Note that the
-  // mean subtraction is always carried out before scaling.
-  optional float scale = 2 [default = 1];
-  optional string mean_file = 3;
-  // DEPRECATED. See TransformationParameter. Specify if we would like to randomly
-  // crop an image.
-  optional uint32 crop_size = 5 [default = 0];
-  // DEPRECATED. See TransformationParameter. Specify if we want to randomly mirror
-  // data.
-  optional bool mirror = 6 [default = false];
-  optional string root_folder = 12 [default = ""];
-  // -1: random from [0, 3]; 0: nearest; 1: bilinear; 2: bicubic; 3: area; 4: lanczos8
-  optional int32 interpolation = 13 [default = 1];
-  // 0: normal warp, 1: short_side, 2: random short_side
-  optional int32 resize_mode = 14 [default = 0];
-}
-message CoupledClusterLossParameter {
-  optional float margin = 1 [default = 1];
-  optional int32 group_size = 2 [default = 3];
-  optional float scale = 3 [default = 1];
-  optional bool log_flag = 4 [default = false];
-  // optional int32 pos_num = 3 [default = 1];
-  // optional int32 neg_num = 4 [default = 1];
-}
-message LiftedStructSimilaritySoftmaxLossParameter {
-  optional float margin = 1 [default = 1.0];
 }

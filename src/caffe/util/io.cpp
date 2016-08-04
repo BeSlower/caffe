@@ -18,6 +18,9 @@
 #include "caffe/common.hpp"
 #include "caffe/proto/caffe.pb.h"
 #include "caffe/util/io.hpp"
+#include "caffe/util/rng.hpp"
+#include "caffe/util/math_functions.hpp"
+#include "caffe/data_transformer.hpp"
 
 const int kProtoReadBytesLimit = INT_MAX;  // Max size of 2 GB minus 1 byte.
 
@@ -71,21 +74,136 @@ void WriteProtoToBinaryFile(const Message& proto, const char* filename) {
 
 #ifdef USE_OPENCV
 cv::Mat ReadImageToCVMat(const string& filename,
-    const int height, const int width, const bool is_color) {
+    const int height, const int width, const bool is_color, 
+    const int interpolation, const int resize_mode) {
   cv::Mat cv_img;
   int cv_read_flag = (is_color ? CV_LOAD_IMAGE_COLOR :
     CV_LOAD_IMAGE_GRAYSCALE);
   cv::Mat cv_img_origin = cv::imread(filename, cv_read_flag);
+  float short_side_length, rand_length, scale;
+  int min_short_length, max_short_length;
+  int nh, nw, mode, interp;
   if (!cv_img_origin.data) {
     LOG(ERROR) << "Could not open or find file " << filename;
     return cv_img_origin;
   }
-  if (height > 0 && width > 0) {
-    cv::resize(cv_img_origin, cv_img, cv::Size(width, height));
-  } else {
-    cv_img = cv_img_origin;
+  float interp_ratio;
+  caffe_rng_uniform(1, 0.01f, 3.99f, &interp_ratio);
+  // if -1,  use random interpolation for images
+  interp = (interpolation == -1) ? static_cast<int> (interp_ratio) : interpolation;
+  
+  mode = resize_mode;
+  DLOG(INFO) << "resize mode: " << mode << ", interpolation mode: " << interp;
+  // compatible fix for old prototxt
+  if ((height*width) == 0 && (height + width) > 0) {
+      mode = 1;
   }
+  switch (mode)
+  {
+  case 0:
+      if (height > 0 && width > 0) {
+          cv::resize(cv_img_origin, cv_img, cv::Size(width, height), 0, 0, interp);
+      }      
+      else
+      {
+          cv_img = cv_img_origin;
+      }
+      break;
+  case 1:
+      if (height > 0 && width > 0) {
+          short_side_length = std::min(height, width);
+      }
+      else
+      {
+          short_side_length = (float)(height + width);          
+      }
+      CHECK_GT(short_side_length, 0) << "The short side length of images must be greater than 0";
+      scale = std::min(cv_img_origin.rows, cv_img_origin.cols) / short_side_length;
+      nh = (int)(cv_img_origin.rows / scale);
+      nw = (int)(cv_img_origin.cols / scale);
+      cv::resize(cv_img_origin, cv_img, cv::Size(nw, nh), 0, 0, interp);
+      break;
+  case 2:
+      CHECK_GT(height, 0) << "The height of images must be greater than 0";
+      CHECK_GT(width, 0) << "The width of images must be greater than 0";
+      float origin_ratio;
+      min_short_length = std::min(height, width);
+      max_short_length = std::max(height, width);
+      // rand_length = min_short_length + Rand(max_short_length - min_short_length + 1);
+      caffe_rng_uniform(1, (float) min_short_length, (float) max_short_length, &rand_length);
+      origin_ratio = static_cast<float> (cv_img_origin.cols) / static_cast<float> (cv_img_origin.rows);      
+      if (origin_ratio < 1) // width is short
+      {
+          nw = static_cast<int> (rand_length);
+          nh = static_cast<int> (nw / origin_ratio);
+      }      
+      else // height is short
+      {
+          nh = static_cast<int> (rand_length);
+          nw = static_cast<int> (nh * origin_ratio);
+      }
+      DLOG(INFO) << "The image is resized to the height and width of " << nh << "x" << nw;
+      cv::resize(cv_img_origin, cv_img, cv::Size(nw, nh), 0, 0, interp);
+      break;
+  case 3:
+      CHECK_GT(height, 0) << "The height of images must be greater than 0";
+      CHECK_GT(width, 0) << "The width of images must be greater than 0";
+      float area_ratio, target_ratio, prob_change_aspect, target_area;
+      for (int attempt = 0; attempt < 10; ++attempt)
+      {
+          caffe_rng_uniform(1, 0.15f, 1.0f, &area_ratio);
+          caffe_rng_uniform(1, 0.75f, 1.3333f, &target_ratio); // [3/4, 4/3]
+          target_area = cv_img_origin.rows * cv_img_origin.cols * area_ratio; //[0.15, 1.0] * area
+          nw = static_cast<int> (std::sqrt(target_area) * target_ratio + 0.5f);
+          nh = static_cast<int> (std::sqrt(target_area) / target_ratio + 0.5f);
+          caffe_rng_uniform(1, 0.0f, 1.0f, &prob_change_aspect);
+          if (prob_change_aspect > 0.5)
+          {
+              int tmp = nw;
+              nw = nh;
+              nh = tmp;
+          }
+          if ((nh > 1) && (nw > 1) && (nh <= cv_img_origin.rows) && (nw <= cv_img_origin.cols))
+          {
+              int h_off = 0;
+              int w_off = 0;
+              float tmp_off;
+              caffe_rng_uniform(1, 0.0f, float(cv_img_origin.rows - nh + 0.99f), &tmp_off);
+              h_off = static_cast<int> (tmp_off);
+              caffe_rng_uniform(1, 0.0f, float(cv_img_origin.cols - nw + 0.99f), &tmp_off);
+              w_off = static_cast<int> (tmp_off);
+              cv::Rect roi(w_off, h_off, nw, nh);
+              cv::Mat cv_cropped_img = cv_img_origin(roi);
+              if ((cv_cropped_img.cols == nw) && (cv_cropped_img.rows == nh)) {
+                  DLOG(INFO) << "The image is of size " << cv_img_origin.rows << "x" << cv_img_origin.cols 
+                        << ", cropped to " << nh << "x" << nw << " with offset " << h_off << "x" << w_off;
+                  cv::resize(cv_cropped_img, cv_img, cv::Size(width, height), 0, 0, interp);
+                  return cv_img;
+              }
+          }
+      }
+      short_side_length = std::min(height, width);
+      CHECK_GT(short_side_length, 0) << "The short side length of images must be greater than 0";
+      scale = std::min(cv_img_origin.rows, cv_img_origin.cols) / short_side_length;
+      nh = static_cast<int> (cv_img_origin.rows / scale);
+      nw = static_cast<int> (cv_img_origin.cols / scale);
+      cv::resize(cv_img_origin, cv_img, cv::Size(nw, nh), 0, 0, interp);
+      break;
+  default:
+      LOG(FATAL) << "Unknown resizing mode.";
+  }
+  
   return cv_img;
+}
+cv::Mat ReadImageToCVMat(const string& filename,
+    const int height, const int width, const bool is_color, 
+    const int interpolation) {
+    return ReadImageToCVMat(filename, height, width, is_color, interpolation, 0);
+}
+
+cv::Mat ReadImageToCVMat(const string& filename,
+    const int height, const int width, const bool is_color) {
+    return ReadImageToCVMat(filename, height, width, is_color, 1);
 }
 
 cv::Mat ReadImageToCVMat(const string& filename,
@@ -101,7 +219,6 @@ cv::Mat ReadImageToCVMat(const string& filename,
 cv::Mat ReadImageToCVMat(const string& filename) {
   return ReadImageToCVMat(filename, 0, 0, true);
 }
-
 // Do the file extension and encoding match?
 static bool matchExt(const std::string & fn,
                      std::string en) {

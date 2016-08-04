@@ -69,6 +69,12 @@ void ImageDataLayer<Dtype>::DataLayerSetUp(const vector<Blob<Dtype>*>& bottom,
   // Read an image, and use it to initialize the top blob.
   cv::Mat cv_img = ReadImageToCVMat(root_folder + lines_[lines_id_].first,
                                     new_height, new_width, is_color);
+
+  LOG(INFO) << "root_folder: " <<root_folder;
+  LOG(INFO) << "lines_[lines_id_].first: " <<lines_[lines_id_].first;
+  LOG(INFO) << "lines_[lines_id_+1].first: " <<lines_[lines_id_ + 1].first;
+  LOG(INFO) << "lines_[lines_id_].second: " <<lines_[lines_id_].second;
+
   CHECK(cv_img.data) << "Could not load " << lines_[lines_id_].first;
   // Use data_transformer to infer the expected blob shape from a cv_image.
   vector<int> top_shape = this->data_transformer_->InferBlobShape(cv_img);

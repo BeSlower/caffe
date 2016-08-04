@@ -51,15 +51,6 @@ class DataTransformer {
                 Blob<Dtype>* transformed_blob);
 
 #ifdef USE_OPENCV
-  //data argument
-  void ColorCasting(cv::Mat		&img,
-					const int	magnitude);
-
-  float ResizeImageKeepAspectRatio(cv::Mat &img,
-									const int width,
-									const int height);
-  int RotateImageRandomly(cv::Mat &img,
-							const int angle_range);
   /**
    * @brief Applies the transformation defined in the data layer's
    * transform_param block to a vector of Mat.
